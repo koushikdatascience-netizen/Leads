@@ -1,0 +1,26 @@
+{
+  "name": "lead-scraper",
+  "version": "1.0.0",
+  "description": "Simple Playwright script to scrape business leads from Google Maps",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "playwright",
+    "scraper",
+    "google-maps",
+    "leads"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "readline": "^1.3.0",
+    "sql.js": "^1.8.0"
+  }
+}
+

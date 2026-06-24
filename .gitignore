@@ -1,0 +1,12 @@
+node_modules/
+leads.json
+leads.csv
+leads.db
+Leads/
+data/
+*.db
+*.db-journal
+__pycache__/
+*.pyc
+*.log
+.env

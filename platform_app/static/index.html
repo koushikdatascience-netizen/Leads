@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lead Platform</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --line: #d8d8d2;
+      --ink: #191b1f;
+      --muted: #666b74;
+      --accent: #176b87;
+      --accent-2: #2d8a55;
+      --warn: #a35a00;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); }
+    header { padding: 18px 24px; border-bottom: 1px solid var(--line); background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 20px; margin: 0; }
+    main { padding: 20px 24px 36px; display: grid; grid-template-columns: 360px 1fr; gap: 18px; }
+    section, aside { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    aside { padding: 16px; height: fit-content; }
+    section { overflow: hidden; }
+    .section-head { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h2 { font-size: 15px; margin: 0; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+    select, input, textarea, button { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; font: inherit; background: #fff; color: var(--ink); }
+    select[multiple] { min-height: 122px; }
+    textarea { min-height: 72px; resize: vertical; }
+    button { cursor: pointer; border-color: var(--accent); color: #fff; background: var(--accent); font-weight: 650; }
+    button.secondary { color: var(--accent); background: #fff; }
+    button.green { background: var(--accent-2); border-color: var(--accent-2); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; padding: 16px; border-bottom: 1px solid var(--line); }
+    .stat { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fbfbfa; }
+    .stat strong { display: block; font-size: 22px; margin-bottom: 3px; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .table-wrap { overflow: auto; max-height: 58vh; }
+    table { border-collapse: collapse; width: 100%; min-width: 980px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+    th { background: #fbfbfa; color: var(--muted); font-size: 12px; position: sticky; top: 0; }
+    .muted { color: var(--muted); }
+    .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; font-size: 12px; background: #fff; }
+    .warning { margin-top: 12px; color: var(--warn); font-size: 12px; line-height: 1.45; }
+    .progress { height: 10px; background: #e7e7e2; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+    .bar { height: 100%; width: 0%; background: var(--accent-2); transition: width .3s ease; }
+    .log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; background: #101418; color: #dbe7ee; padding: 10px; max-height: 180px; overflow: auto; border-radius: 6px; margin-top: 10px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 14px; } header { padding: 14px; align-items: flex-start; flex-direction: column; } .stats { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Lead Platform</h1>
+      <div class="muted">Search, scrape, dedupe, filter, and export leads</div>
+    </div>
+    <button class="secondary" id="importJson" style="max-width: 190px;">Import leads.json</button>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Scrape Planner</h2>
+      <label>Country</label>
+      <select id="country"><option>India</option></select>
+
+      <label>States</label>
+      <select id="states" multiple></select>
+      <button class="secondary" id="allStates" style="margin-top: 8px;">Select all states</button>
+
+      <label>Districts</label>
+      <select id="districts" multiple></select>
+      <button class="secondary" id="allDistricts" style="margin-top: 8px;">Select all districts</button>
+
+      <label>Industries</label>
+      <textarea id="industries" placeholder="Leave blank for alcohol leads, or add one industry per line"></textarea>
+
+      <div class="row">
+        <div>
+          <label>Mode</label>
+          <select id="mode">
+            <option value="fast">fast</option>
+            <option value="thorough">thorough</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="estimate">Estimate</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="green" id="startScrape">Start scrape</button>
+        <button class="secondary" id="download">Download CSV</button>
+      </div>
+
+      <div id="estimateBox" class="warning">Run estimate before scraping. Fast mode is recommended for big states.</div>
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="muted" id="jobStatus" style="margin-top: 8px;">No active job</div>
+      <div class="log" id="jobLog" hidden></div>
+
+      <div class="warning">
+        Production note: Google Maps scraping/storage can violate Google terms. Prefer licensed lead sources or approved APIs for a commercial product.
+      </div>
+    </aside>
+
+    <section>
+      <div class="section-head">
+        <h2>Available Leads</h2>
+        <div class="pill" id="totalLeads">0 leads</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><strong id="statTotal">0</strong><span>Total saved</span></div>
+        <div class="stat"><strong id="statStates">0</strong><span>States</span></div>
+        <div class="stat"><strong id="statIndustry">0</strong><span>Industries</span></div>
+        <div class="stat"><strong id="statPage">0</strong><span>Shown</span></div>
+      </div>
+      <div class="section-head">
+        <div class="row" style="width: 100%; max-width: 620px;">
+          <input id="search" placeholder="Search name, phone, address" />
+          <button class="secondary" id="refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Industry</th>
+              <th>Location</th>
+              <th>Phone</th>
+              <th>Rating</th>
+              <th>Address</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="leadRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let catalog = null;
+    let activeJob = null;
+
+    function selected(select) {
+      return [...select.selectedOptions].map(option => option.value);
+    }
+
+    function industries() {
+      return $('industries').value.split(/\n|,/).map(v => v.trim()).filter(Boolean);
+    }
+
+    function payload() {
+      return {
+        country: $('country').value,
+        states: selected($('states')),
+        districts: selected($('districts')),
+        industries: industries(),
+        mode: $('mode').value
+      };
+    }
+
+    function fillSelect(el, items) {
+      el.innerHTML = items.map(item => `<option value="${item}">${item}</option>`).join('');
+    }
+
+    function updateDistricts() {
+      const chosen = selected($('states'));
+      const states = chosen.length ? chosen : catalog.states.map(s => s.name);
+      const districts = [];
+      for (const state of catalog.states) {
+        if (states.includes(state.name)) {
+          for (const district of state.districts) districts.push(district);
+        }
+      }
+      fillSelect($('districts'), [...new Set(districts)]);
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    async function loadCatalog() {
+      catalog = await api('/api/catalog');
+      fillSelect($('states'), catalog.states.map(s => s.name));
+      updateDistricts();
+    }
+
+    async function loadSummary() {
+      const data = await api('/api/summary');
+      $('statTotal').textContent = data.total;
+      $('totalLeads').textContent = `${data.total} leads`;
+      $('statStates').textContent = data.by_state.filter(x => x.state).length;
+      $('statIndustry').textContent = data.by_industry.filter(x => x.industry).length;
+    }
+
+    async function loadLeads() {
+      const params = new URLSearchParams();
+      const states = selected($('states'));
+      const districts = selected($('districts'));
+      if (states.length === 1) params.set('state', states[0]);
+      if (districts.length === 1) params.set('district', districts[0]);
+      if ($('search').value) params.set('q', $('search').value);
+      params.set('limit', '100');
+      const data = await api(`/api/leads?${params.toString()}`);
+      $('statPage').textContent = data.items.length;
+      $('leadRows').innerHTML = data.items.map(lead => `
+        <tr>
+          <td><strong>${lead.name || ''}</strong><br><span class="muted">${lead.business_type || ''}</span></td>
+          <td>${lead.industry || ''}</td>
+          <td>${lead.state || ''}<br><span class="muted">${lead.district || ''}</span></td>
+          <td>${lead.phone || ''}</td>
+          <td>${lead.rating || ''}<br><span class="muted">${lead.review_count || ''}</span></td>
+          <td>${lead.address || ''}</td>
+          <td>${lead.source || ''}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function refreshAll() {
+      await loadSummary();
+      await loadLeads();
+    }
+
+    $('states').addEventListener('change', updateDistricts);
+    $('allStates').addEventListener('click', () => { for (const option of $('states').options) option.selected = true; updateDistricts(); });
+    $('allDistricts').addEventListener('click', () => { for (const option of $('districts').options) option.selected = true; });
+    $('refresh').addEventListener('click', refreshAll);
+    $('search').addEventListener('keydown', event => { if (event.key === 'Enter') refreshAll(); });
+    $('importJson').addEventListener('click', async () => {
+      const result = await api('/api/import/json', { method: 'POST' });
+      alert(`Imported ${result.inserted}, duplicates/skipped ${result.duplicates}`);
+      refreshAll();
+    });
+    $('estimate').addEventListener('click', async () => {
+      const data = await api('/api/estimate', { method: 'POST', body: JSON.stringify(payload()) });
+      $('estimateBox').textContent = `${data.total_queries} searches, ${data.existing_leads} already saved, approx ${data.estimated_new_leads} new leads, about ${data.estimated_minutes} minutes.`;
+    });
+    $('download').addEventListener('click', () => {
+      const params = new URLSearchParams();
+      const states = selected($('states'));
+      const districts = selected($('districts'));
+      if (states.length === 1) params.set('state', states[0]);
+      if (districts.length === 1) params.set('district', districts[0]);
+      if ($('search').value) params.set('q', $('search').value);
+      window.location = `/api/export.csv?${params.toString()}`;
+    });
+    $('startScrape').addEventListener('click', async () => {
+      const data = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload()) });
+      activeJob = data.id;
+      $('jobLog').hidden = false;
+      pollJob();
+    });
+
+    async function pollJob() {
+      if (!activeJob) return;
+      const job = await api(`/api/jobs/${activeJob}`);
+      $('bar').style.width = `${job.progress}%`;
+      $('jobStatus').textContent = `${job.status}: ${job.progress}% (${job.completed_queries}/${job.total_queries}) new ${job.inserted_count}, duplicates ${job.duplicate_count}`;
+      $('jobLog').textContent = job.log || '';
+      if (job.status === 'completed' || job.status === 'failed') {
+        await refreshAll();
+        return;
+      }
+      setTimeout(pollJob, 1800);
+    }
+
+    loadCatalog().then(refreshAll).catch(err => alert(err.message));
+  </script>
+</body>
+</html>
