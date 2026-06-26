@@ -380,35 +380,69 @@ def job_log(job_id: str, line: str) -> None:
     conn.execute(sql("UPDATE scrape_jobs SET log=? WHERE id=?"), (updated, job_id))
 
 
-def build_queries_for_job(payload: ScrapeRequest) -> list[dict[str, str]]:
+def build_queries_for_job(payload: ScrapeRequest, job_id: Optional[str] = None) -> list[dict[str, str]]:
   mode = "thorough" if normalize(payload.mode) in {"thorough", "grid"} else "fast"
-  queries: list[dict[str, str]] = []
-  for state, district, industry in selected_plan_items(payload):
-    script = f"""
+  items = [
+    {"state": state, "district": district, "industry": industry}
+    for state, district, industry in selected_plan_items(payload)
+  ]
+  if not items:
+    return []
+
+  if job_id:
+    job_update(job_id, status="preparing", progress=0)
+    job_log(job_id, f"Preparing {len(items)} district/industry plans...\n")
+
+  with NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as item_file:
+    json.dump({"mode": mode, "items": items}, item_file)
+    item_file_path = item_file.name
+
+  script = """
+const fs = require('fs');
 const g = require('./geo-scraper');
-const plan = g.buildScrapePlan({json.dumps(state)}, {json.dumps(district)}, {json.dumps(industry)}, {{ mode: {json.dumps(mode)} }});
-process.stdout.write(JSON.stringify([...plan.phase1Queries, ...plan.phase2Queries]));
+const input = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const entries = [];
+for (const item of input.items) {
+  const plan = g.buildScrapePlan(item.state, item.district, item.industry, { mode: input.mode });
+  for (const query of [...plan.phase1Queries, ...plan.phase2Queries]) {
+    entries.push({
+      query,
+      state: item.state,
+      district: item.district,
+      industry: item.industry
+    });
+  }
+}
+process.stdout.write(JSON.stringify(entries));
 """
-    result = subprocess.run([NODE_CMD, "-e", script], cwd=ROOT, text=True, capture_output=True, timeout=20)
+  try:
+    result = subprocess.run(
+      [NODE_CMD, "-e", script, item_file_path],
+      cwd=ROOT,
+      text=True,
+      capture_output=True,
+      timeout=60,
+    )
     if result.returncode != 0:
       raise RuntimeError(result.stderr or result.stdout)
-    for query in json.loads(result.stdout):
-      queries.append({
-        "query": query,
-        "state": state,
-        "district": district,
-        "industry": industry,
-      })
-  return queries
+    queries = json.loads(result.stdout)
+    if job_id:
+      job_log(job_id, f"Prepared {len(queries)} searches. Starting scraper...\n")
+    return queries
+  finally:
+    try:
+      Path(item_file_path).unlink(missing_ok=True)
+    except Exception:
+      pass
 
 
 def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
   try:
-    job_update(job_id, status="running", started_at=utc_now())
+    job_update(job_id, status="preparing", started_at=utc_now())
     before = import_leads_json()
-    queries = build_queries_for_job(payload)
+    queries = build_queries_for_job(payload, job_id)
     total = len(queries)
-    job_update(job_id, total_queries=total, existing_before=count_existing(selected_plan_items(payload)))
+    job_update(job_id, status="running", total_queries=total, existing_before=count_existing(selected_plan_items(payload)))
     if total == 0:
       job_update(job_id, status="failed", error="No queries generated", finished_at=utc_now())
       return

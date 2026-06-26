@@ -475,7 +475,11 @@
         const job = await api(`/api/jobs/${activeJob}`);
         const pct = job.total_queries > 0 ? job.progress : 2;
         setProgress(pct, job.status === 'queued' || job.status === 'running');
-        $('jobStatus').textContent = `${job.status.toUpperCase()}: ${job.progress}% (${job.completed_queries}/${job.total_queries || 'preparing'})`;
+        const denominator = job.total_queries || 'preparing searches';
+        const statusLabel = job.status === 'preparing'
+          ? 'PREPARING SEARCHES'
+          : job.status.toUpperCase();
+        $('jobStatus').textContent = `${statusLabel}: ${job.progress}% (${job.completed_queries}/${denominator})`;
         $('scrapeSummary').hidden = false;
         $('scrapeSummary').className = job.status === 'failed' ? 'error' : 'success';
         $('scrapeSummary').textContent = `New saved: ${job.inserted_count} | Duplicates/skipped: ${job.duplicate_count} | Existing before: ${job.existing_before}`;
