@@ -36,6 +36,9 @@
     button.secondary { color: var(--accent); background: #fff; }
     button.green { background: var(--accent-2); border-color: var(--accent-2); }
     button:disabled { opacity: .55; cursor: not-allowed; }
+    button.loading { position: relative; color: transparent; }
+    button.loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.55); border-top-color: #fff; border-radius: 999px; animation: spin .8s linear infinite; }
+    button.secondary.loading::after { border-color: rgba(23,107,135,.25); border-top-color: var(--accent); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
     .stats { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; padding: 16px; border-bottom: 1px solid var(--line); }
@@ -55,6 +58,10 @@
     .estimate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .estimate-grid div { border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: #fff; }
     .estimate-grid strong { display: block; font-size: 18px; }
+    .inline-loader { display: none; align-items: center; gap: 8px; margin-top: 10px; color: var(--accent); font-size: 12px; font-weight: 650; }
+    .inline-loader.active { display: flex; }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(23,107,135,.22); border-top-color: var(--accent); border-radius: 999px; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .progress { height: 10px; background: #e7e7e2; border-radius: 999px; overflow: hidden; margin-top: 10px; }
     .bar { height: 100%; width: 0%; background: var(--accent-2); transition: width .3s ease; }
     .bar.active { background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%, transparent); background-size: 18px 18px; animation: move 1s linear infinite; }
@@ -114,6 +121,7 @@
       <button class="secondary" id="uploadLeads" style="margin-top: 8px;">Upload leads file</button>
 
       <div id="estimateBox" class="warning">Run estimate before scraping. Fast mode is recommended for big states.</div>
+      <div id="estimateLoader" class="inline-loader"><span class="spinner"></span><span>Calculating estimate...</span></div>
       <div id="estimateCard" class="estimate-card" hidden>
         <strong>Estimate ready</strong>
         <div class="estimate-grid">
@@ -231,6 +239,15 @@
       if (label) $('jobStatus').textContent = label;
     }
 
+    function setEstimating(value) {
+      $('estimateLoader').classList.toggle('active', value);
+      $('estimate').classList.toggle('loading', value);
+      if (value) {
+        $('estimateBox').className = 'warning';
+        $('estimateBox').textContent = 'Calculating searches, saved leads, approximate new leads, and time...';
+      }
+    }
+
     function formatError(error) {
       const text = String(error && error.message ? error.message : error);
       if (text.includes('404')) {
@@ -308,6 +325,7 @@
 
     async function estimateCurrentPlan() {
       setBusy(true, 'Estimating selected plan...');
+      setEstimating(true);
       setError('');
       try {
         const data = await api('/api/estimate', { method: 'POST', body: JSON.stringify(payload()) });
@@ -317,6 +335,7 @@
         setError(formatError(err));
         throw err;
       } finally {
+        setEstimating(false);
         setBusy(false);
       }
     }
