@@ -16,7 +16,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -335,6 +335,10 @@ def import_leads_json(path: Path = LEADS_JSON) -> dict[str, int]:
   if not path.exists():
     return {"seen": 0, "inserted": 0, "duplicates": 0}
   data = json.loads(path.read_text(encoding="utf-8"))
+  return import_lead_records(data)
+
+
+def import_lead_records(data: list[dict[str, Any]]) -> dict[str, int]:
   inserted = 0
   duplicates = 0
   with db() as conn:
@@ -344,6 +348,19 @@ def import_leads_json(path: Path = LEADS_JSON) -> dict[str, int]:
       else:
         duplicates += 1
   return {"seen": len(data), "inserted": inserted, "duplicates": duplicates}
+
+
+def parse_uploaded_leads(filename: str, content: bytes) -> list[dict[str, Any]]:
+  suffix = Path(filename).suffix.lower()
+  text = content.decode("utf-8-sig")
+  if suffix == ".json":
+    data = json.loads(text)
+    if not isinstance(data, list):
+      raise HTTPException(status_code=400, detail="JSON upload must be a list of leads")
+    return data
+  if suffix == ".csv":
+    return [dict(row) for row in csv.DictReader(io.StringIO(text))]
+  raise HTTPException(status_code=400, detail="Upload a .json or .csv file")
 
 
 def job_update(job_id: str, **fields: Any) -> None:
@@ -520,6 +537,13 @@ def summary() -> dict[str, Any]:
 @app.post("/api/import/json")
 def import_json() -> dict[str, int]:
   return import_leads_json()
+
+
+@app.post("/api/import/upload")
+async def import_upload(file: UploadFile = File(...)) -> dict[str, int]:
+  content = await file.read()
+  records = parse_uploaded_leads(file.filename or "", content)
+  return import_lead_records(records)
 
 
 @app.post("/api/estimate")

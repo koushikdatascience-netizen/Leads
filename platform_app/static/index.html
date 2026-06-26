@@ -99,6 +99,10 @@
         <button class="secondary" id="download">Download CSV</button>
       </div>
 
+      <label>Import JSON/CSV</label>
+      <input id="uploadFile" type="file" accept=".json,.csv" />
+      <button class="secondary" id="uploadLeads" style="margin-top: 8px;">Upload leads file</button>
+
       <div id="estimateBox" class="warning">Run estimate before scraping. Fast mode is recommended for big states.</div>
       <div class="progress"><div class="bar" id="bar"></div></div>
       <div class="muted" id="jobStatus" style="margin-top: 8px;">No active job</div>
@@ -243,6 +247,20 @@
     $('importJson').addEventListener('click', async () => {
       const result = await api('/api/import/json', { method: 'POST' });
       alert(`Imported ${result.inserted}, duplicates/skipped ${result.duplicates}`);
+      refreshAll();
+    });
+    $('uploadLeads').addEventListener('click', async () => {
+      const file = $('uploadFile').files[0];
+      if (!file) {
+        alert('Choose a JSON or CSV file first.');
+        return;
+      }
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/import/upload', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
+      alert(`Uploaded ${result.inserted}, duplicates/skipped ${result.duplicates}`);
       refreshAll();
     });
     $('estimate').addEventListener('click', async () => {
