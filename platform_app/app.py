@@ -432,8 +432,9 @@ def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
       job_log(job_id, line)
       match = query_pattern.search(line)
       if match:
-        completed = max(int(match.group(1)) - 1, 0)
-        progress = min(99, int((completed / total) * 100))
+        current = max(int(match.group(1)), 1)
+        completed = max(current - 1, 0)
+        progress = max(1, min(99, int((completed / total) * 100)))
         job_update(job_id, completed_queries=completed, progress=progress)
 
     code = process.wait()
@@ -562,8 +563,9 @@ def estimate(payload: EstimateRequest) -> dict[str, Any]:
 
 @app.post("/api/jobs")
 def create_job(payload: ScrapeRequest) -> dict[str, Any]:
-  estimate = estimate_payload(payload)
   job_id = str(uuid.uuid4())
+  items = selected_plan_items(payload)
+  existing_before = count_existing(items)
   with db() as conn:
     conn.execute(
       sql(
@@ -581,14 +583,14 @@ def create_job(payload: ScrapeRequest) -> dict[str, Any]:
         json.dumps(payload.districts),
         json.dumps(payload.industries),
         payload.mode or "fast",
-        estimate["total_queries"],
-        estimate["existing_leads"],
+        0,
+        existing_before,
       ),
     )
   thread = threading.Thread(target=run_scrape_job, args=(job_id, payload), daemon=True)
   job_threads[job_id] = thread
   thread.start()
-  return {"id": job_id, "estimate": estimate}
+  return {"id": job_id, "existing_before": existing_before}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -626,5 +628,44 @@ def export_csv(
   return StreamingResponse(
     iter([output.getvalue()]),
     media_type="text/csv",
+    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+  )
+
+
+@app.get("/api/export.xlsx")
+def export_xlsx(
+  state: Optional[str] = None,
+  district: Optional[str] = None,
+  industry: Optional[str] = None,
+  q: Optional[str] = None,
+) -> StreamingResponse:
+  try:
+    from openpyxl import Workbook
+  except ImportError as exc:
+    raise HTTPException(status_code=500, detail="openpyxl is not installed") from exc
+
+  where, params = lead_filters(state, district, industry, q)
+  with db() as conn:
+    rows = conn.execute(sql(f"SELECT * FROM leads{where} ORDER BY state, district, name"), params).fetchall()
+
+  columns = [
+    "name", "rating", "review_count", "business_type", "industry", "address",
+    "phone", "status", "maps_url", "country", "state", "district", "source",
+    "scraped_at",
+  ]
+  workbook = Workbook()
+  sheet = workbook.active
+  sheet.title = "Leads"
+  sheet.append(columns)
+  for row in rows:
+    sheet.append([row[col] for col in columns])
+
+  output = io.BytesIO()
+  workbook.save(output)
+  output.seek(0)
+  filename = f"leads-{int(time.time())}.xlsx"
+  return StreamingResponse(
+    output,
+    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     headers={"Content-Disposition": f'attachment; filename="{filename}"'},
   )
