@@ -504,7 +504,7 @@
         setError(formatError(err));
         return;
       }
-      setTimeout(pollJob, 1800);
+      setTimeout(pollJob, 1000);
     }
 
     loadCatalog().then(refreshAll).catch(err => setError(formatError(err)));

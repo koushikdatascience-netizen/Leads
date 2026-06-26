@@ -380,6 +380,16 @@ def job_log(job_id: str, line: str) -> None:
     conn.execute(sql("UPDATE scrape_jobs SET log=? WHERE id=?"), (updated, job_id))
 
 
+def sync_scraped_leads(job_id: str, inserted_so_far: int) -> int:
+  result = import_leads_json()
+  inserted_now = int(result.get("inserted", 0))
+  if inserted_now > 0:
+    inserted_so_far += inserted_now
+    job_update(job_id, inserted_count=inserted_so_far)
+    job_log(job_id, f"Synced {inserted_now} new leads into database.\n")
+  return inserted_so_far
+
+
 def build_queries_for_job(payload: ScrapeRequest, job_id: Optional[str] = None) -> list[dict[str, str]]:
   mode = "thorough" if normalize(payload.mode) in {"thorough", "grid"} else "fast"
   items = [
@@ -439,7 +449,7 @@ process.stdout.write(JSON.stringify(entries));
 def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
   try:
     job_update(job_id, status="preparing", started_at=utc_now())
-    before = import_leads_json()
+    sync_scraped_leads(job_id, 0)
     queries = build_queries_for_job(payload, job_id)
     total = len(queries)
     job_update(job_id, status="running", total_queries=total, existing_before=count_existing(selected_plan_items(payload)))
@@ -461,6 +471,8 @@ def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
       bufsize=1,
     )
     query_pattern = re.compile(r"PLATFORM_QUERY\s+(\d+)\s*/\s*(\d+)", re.IGNORECASE)
+    inserted_total = 0
+    last_sync = 0.0
     assert process.stdout is not None
     for line in process.stdout:
       job_log(job_id, line)
@@ -470,11 +482,18 @@ def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
         completed = max(current - 1, 0)
         progress = max(1, min(99, int((completed / total) * 100)))
         job_update(job_id, completed_queries=completed, progress=progress)
+      should_sync = (
+        "✅" in line or
+        "Saved:" in line or
+        "New leads from this query" in line or
+        (time.time() - last_sync) >= 2.0
+      )
+      if should_sync:
+        inserted_total = sync_scraped_leads(job_id, inserted_total)
+        last_sync = time.time()
 
     code = process.wait()
-    after = import_leads_json()
-    inserted = max(after["inserted"], 0)
-    duplicates = max(after["duplicates"] - before["duplicates"], 0)
+    inserted_total = sync_scraped_leads(job_id, inserted_total)
     if code != 0:
       job_update(job_id, status="failed", progress=100, error=f"Scraper exited with code {code}", finished_at=utc_now())
       return
@@ -483,8 +502,7 @@ def run_scrape_job(job_id: str, payload: ScrapeRequest) -> None:
       status="completed",
       completed_queries=total,
       progress=100,
-      inserted_count=inserted,
-      duplicate_count=duplicates,
+      inserted_count=inserted_total,
       finished_at=utc_now(),
     )
   except Exception as exc:
