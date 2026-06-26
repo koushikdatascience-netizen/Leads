@@ -26,7 +26,8 @@ async function main() {
         state: entry.state || '',
         district: entry.district || '',
         industry: entry.industry || ''
-      }
+      },
+      failFast: true
     });
   }
 }

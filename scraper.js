@@ -367,7 +367,7 @@ async function launchFreshSession(query, headless, metadata = {}) {
 
 // ─── Orchestrator — runs each query in its own isolated session ───────────────
 
-async function runScraper({ queries, headless = false, pauseRangeMs = [2000, 5000], metadata = {} }) {
+async function runScraper({ queries, headless = false, pauseRangeMs = [2000, 5000], metadata = {}, failFast = false }) {
   console.log('🚀  Google Maps Stealth Scraper');
   console.log(`🔁  Queries  : ${queries.length}  (one fresh browser each)`);
   console.log(`💾  JSON     : ${path.resolve(JSON_FILE)}`);
@@ -386,6 +386,9 @@ async function runScraper({ queries, headless = false, pauseRangeMs = [2000, 500
       console.log(`  📦  New leads from this query: ${count}`);
     } catch (err) {
       console.error(`  ❌  Failed: ${err.message}`);
+      if (failFast) {
+        throw err;
+      }
     }
 
     if (i < queries.length - 1) {
