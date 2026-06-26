@@ -16,6 +16,7 @@
       --accent: #176b87;
       --accent-2: #2d8a55;
       --warn: #a35a00;
+      --danger: #b42318;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--ink); }
@@ -48,8 +49,16 @@
     .muted { color: var(--muted); }
     .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; font-size: 12px; background: #fff; }
     .warning { margin-top: 12px; color: var(--warn); font-size: 12px; line-height: 1.45; }
+    .error { margin-top: 12px; color: var(--danger); background: #fff0ee; border: 1px solid #f0b8b2; border-radius: 6px; padding: 9px 10px; font-size: 12px; line-height: 1.45; }
+    .success { margin-top: 12px; color: #176038; background: #eefaf2; border: 1px solid #b8e2c5; border-radius: 6px; padding: 9px 10px; font-size: 12px; line-height: 1.45; }
+    .estimate-card { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fbfbfa; display: grid; gap: 8px; }
+    .estimate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .estimate-grid div { border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: #fff; }
+    .estimate-grid strong { display: block; font-size: 18px; }
     .progress { height: 10px; background: #e7e7e2; border-radius: 999px; overflow: hidden; margin-top: 10px; }
     .bar { height: 100%; width: 0%; background: var(--accent-2); transition: width .3s ease; }
+    .bar.active { background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%, transparent); background-size: 18px 18px; animation: move 1s linear infinite; }
+    @keyframes move { from { background-position: 0 0; } to { background-position: 18px 0; } }
     .log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; background: #101418; color: #dbe7ee; padding: 10px; max-height: 180px; overflow: auto; border-radius: 6px; margin-top: 10px; }
     @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 14px; } header { padding: 14px; align-items: flex-start; flex-direction: column; } .stats { grid-template-columns: 1fr 1fr; } }
   </style>
@@ -66,6 +75,7 @@
   <main>
     <aside>
       <h2>Scrape Planner</h2>
+      <div id="apiError" class="error" hidden></div>
       <label>Country</label>
       <select id="country"><option>India</option></select>
 
@@ -104,6 +114,16 @@
       <button class="secondary" id="uploadLeads" style="margin-top: 8px;">Upload leads file</button>
 
       <div id="estimateBox" class="warning">Run estimate before scraping. Fast mode is recommended for big states.</div>
+      <div id="estimateCard" class="estimate-card" hidden>
+        <strong>Estimate ready</strong>
+        <div class="estimate-grid">
+          <div><strong id="estQueries">0</strong><span class="muted">Searches</span></div>
+          <div><strong id="estExisting">0</strong><span class="muted">Already saved</span></div>
+          <div><strong id="estNew">0</strong><span class="muted">Approx new</span></div>
+          <div><strong id="estTime">0m</strong><span class="muted">Approx time</span></div>
+        </div>
+        <button class="green" id="confirmScrape">Continue scraping</button>
+      </div>
       <div class="progress"><div class="bar" id="bar"></div></div>
       <div class="muted" id="jobStatus" style="margin-top: 8px;">No active job</div>
       <div class="log" id="jobLog" hidden></div>
@@ -153,6 +173,8 @@
     const $ = (id) => document.getElementById(id);
     let catalog = null;
     let activeJob = null;
+    let lastEstimate = null;
+    let busy = false;
 
     function selected(select) {
       return [...select.selectedOptions].map(option => option.value);
@@ -188,12 +210,41 @@
       fillSelect($('districts'), [...new Set(districts)]);
     }
 
+    function setError(message) {
+      const box = $('apiError');
+      if (!message) {
+        box.hidden = true;
+        box.textContent = '';
+        return;
+      }
+      box.hidden = false;
+      box.textContent = message;
+    }
+
+    function setBusy(value, label = '') {
+      busy = value;
+      $('estimate').disabled = value;
+      $('startScrape').disabled = value;
+      $('confirmScrape').disabled = value;
+      $('uploadLeads').disabled = value;
+      $('importJson').disabled = value;
+      if (label) $('jobStatus').textContent = label;
+    }
+
+    function formatError(error) {
+      const text = String(error && error.message ? error.message : error);
+      if (text.includes('404')) {
+        return 'Backend API returned 404. On Render, make sure this is deployed as a Docker Web Service from the latest commit, not a Static Site. Try /api/health on the same domain.';
+      }
+      return text.length > 280 ? `${text.slice(0, 280)}...` : text;
+    }
+
     async function api(path, options = {}) {
       const res = await fetch(path, {
         headers: { 'Content-Type': 'application/json' },
         ...options
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
       return res.json();
     }
 
@@ -235,8 +286,39 @@
     }
 
     async function refreshAll() {
-      await loadSummary();
-      await loadLeads();
+      try {
+        setError('');
+        await loadSummary();
+        await loadLeads();
+      } catch (err) {
+        setError(formatError(err));
+      }
+    }
+
+    function renderEstimate(data) {
+      lastEstimate = data;
+      $('estimateCard').hidden = false;
+      $('estQueries').textContent = data.total_queries;
+      $('estExisting').textContent = data.existing_leads;
+      $('estNew').textContent = data.estimated_new_leads;
+      $('estTime').textContent = `${data.estimated_minutes}m`;
+      $('estimateBox').className = 'success';
+      $('estimateBox').textContent = `${data.district_count} districts, ${data.industry_count} industries. Review this estimate, then click Continue scraping.`;
+    }
+
+    async function estimateCurrentPlan() {
+      setBusy(true, 'Estimating selected plan...');
+      setError('');
+      try {
+        const data = await api('/api/estimate', { method: 'POST', body: JSON.stringify(payload()) });
+        renderEstimate(data);
+        return data;
+      } catch (err) {
+        setError(formatError(err));
+        throw err;
+      } finally {
+        setBusy(false);
+      }
     }
 
     $('states').addEventListener('change', updateDistricts);
@@ -245,9 +327,17 @@
     $('refresh').addEventListener('click', refreshAll);
     $('search').addEventListener('keydown', event => { if (event.key === 'Enter') refreshAll(); });
     $('importJson').addEventListener('click', async () => {
-      const result = await api('/api/import/json', { method: 'POST' });
-      alert(`Imported ${result.inserted}, duplicates/skipped ${result.duplicates}`);
-      refreshAll();
+      setBusy(true, 'Importing leads.json...');
+      try {
+        const result = await api('/api/import/json', { method: 'POST' });
+        $('estimateBox').className = 'success';
+        $('estimateBox').textContent = `Imported ${result.inserted}, duplicates/skipped ${result.duplicates}`;
+        refreshAll();
+      } catch (err) {
+        setError(formatError(err));
+      } finally {
+        setBusy(false);
+      }
     });
     $('uploadLeads').addEventListener('click', async () => {
       const file = $('uploadFile').files[0];
@@ -257,16 +347,21 @@
       }
       const form = new FormData();
       form.append('file', file);
-      const res = await fetch('/api/import/upload', { method: 'POST', body: form });
-      if (!res.ok) throw new Error(await res.text());
-      const result = await res.json();
-      alert(`Uploaded ${result.inserted}, duplicates/skipped ${result.duplicates}`);
-      refreshAll();
+      setBusy(true, 'Uploading leads file...');
+      try {
+        const res = await fetch('/api/import/upload', { method: 'POST', body: form });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+        const result = await res.json();
+        $('estimateBox').className = 'success';
+        $('estimateBox').textContent = `Uploaded ${result.inserted}, duplicates/skipped ${result.duplicates}`;
+        refreshAll();
+      } catch (err) {
+        setError(formatError(err));
+      } finally {
+        setBusy(false);
+      }
     });
-    $('estimate').addEventListener('click', async () => {
-      const data = await api('/api/estimate', { method: 'POST', body: JSON.stringify(payload()) });
-      $('estimateBox').textContent = `${data.total_queries} searches, ${data.existing_leads} already saved, approx ${data.estimated_new_leads} new leads, about ${data.estimated_minutes} minutes.`;
-    });
+    $('estimate').addEventListener('click', estimateCurrentPlan);
     $('download').addEventListener('click', () => {
       const params = new URLSearchParams();
       const states = selected($('states'));
@@ -276,27 +371,60 @@
       if ($('search').value) params.set('q', $('search').value);
       window.location = `/api/export.csv?${params.toString()}`;
     });
-    $('startScrape').addEventListener('click', async () => {
-      const data = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload()) });
-      activeJob = data.id;
+    async function startScrapeWithEstimate() {
+      if (busy) return;
+      let estimate = lastEstimate;
+      if (!estimate) {
+        estimate = await estimateCurrentPlan();
+      }
+      const ok = window.confirm(`Start scraping now?\n\nSearches: ${estimate.total_queries}\nAlready saved: ${estimate.existing_leads}\nApprox new leads: ${estimate.estimated_new_leads}\nApprox time: ${estimate.estimated_minutes} minutes`);
+      if (!ok) return;
+
+      setBusy(true, 'Starting scrape job...');
+      setError('');
       $('jobLog').hidden = false;
-      pollJob();
-    });
+      $('bar').classList.add('active');
+      $('bar').style.width = '2%';
+      try {
+        const data = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload()) });
+        activeJob = data.id;
+        $('jobStatus').textContent = 'Scrape queued. Waiting for progress...';
+        pollJob();
+      } catch (err) {
+        $('bar').classList.remove('active');
+        setBusy(false);
+        setError(formatError(err));
+      }
+    }
+
+    $('startScrape').addEventListener('click', startScrapeWithEstimate);
+    $('confirmScrape').addEventListener('click', startScrapeWithEstimate);
 
     async function pollJob() {
       if (!activeJob) return;
-      const job = await api(`/api/jobs/${activeJob}`);
-      $('bar').style.width = `${job.progress}%`;
-      $('jobStatus').textContent = `${job.status}: ${job.progress}% (${job.completed_queries}/${job.total_queries}) new ${job.inserted_count}, duplicates ${job.duplicate_count}`;
-      $('jobLog').textContent = job.log || '';
-      if (job.status === 'completed' || job.status === 'failed') {
-        await refreshAll();
+      try {
+        const job = await api(`/api/jobs/${activeJob}`);
+        $('bar').style.width = `${Math.max(job.progress, 2)}%`;
+        $('jobStatus').textContent = `${job.status}: ${job.progress}% (${job.completed_queries}/${job.total_queries}) new ${job.inserted_count}, duplicates ${job.duplicate_count}`;
+        $('jobLog').textContent = job.log || '';
+        await loadLeads();
+        await loadSummary();
+        if (job.status === 'completed' || job.status === 'failed') {
+          $('bar').style.width = '100%';
+          $('bar').classList.remove('active');
+          setBusy(false, job.status === 'completed' ? 'Scrape completed.' : `Scrape failed: ${job.error || 'check logs'}`);
+          return;
+        }
+      } catch (err) {
+        $('bar').classList.remove('active');
+        setBusy(false);
+        setError(formatError(err));
         return;
       }
       setTimeout(pollJob, 1800);
     }
 
-    loadCatalog().then(refreshAll).catch(err => alert(err.message));
+    loadCatalog().then(refreshAll).catch(err => setError(formatError(err)));
   </script>
 </body>
 </html>

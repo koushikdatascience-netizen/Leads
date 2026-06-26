@@ -497,6 +497,15 @@ def index() -> FileResponse:
   return FileResponse(APP_DIR / "static" / "index.html")
 
 
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+  return {
+    "ok": True,
+    "database": "postgres" if DATABASE_URL else "sqlite",
+    "version": "0.1.0"
+  }
+
+
 @app.get("/api/catalog")
 def catalog() -> dict[str, Any]:
   return load_catalog()
